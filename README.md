@@ -105,11 +105,11 @@ Built using LangGraph's modern `Runtime[Context]` and `context_schema`:
 
 ```mermaid
 flowchart TD
-    START([User Query]) --> AgentNode["agent_node\n(Synthesizes prompt + binds active tools)"]
-    AgentNode --> Router{"should_continue?\n(Tool calls present?)"}
-    Router -- "Yes (tool_calls)" --> ToolNode["ToolNode\n(Executes meta-tools or skill tools)"]
-    ToolNode --> AgentNode
-    Router -- "No (final response)" --> END([Final Answer])
+    start_node(["User Query"]) --> agent_node["agent_node<br/>(Synthesizes prompt & binds active tools)"]
+    agent_node --> router_decision{"should_continue?<br/>(Tool calls present?)"}
+    router_decision -->|Yes: tool calls| tool_node["ToolNode<br/>(Executes meta-tools or skill tools)"]
+    tool_node --> agent_node
+    router_decision -->|No: final response| end_node(["Final Answer"])
 ```
 
 - **`SkillRegistry`**: Discovers skill packages from `skills/` on disk, parsing YAML frontmatter and importing callable Python `@tool` definitions.
