@@ -1,0 +1,56 @@
+from collections.abc import Sequence
+from pathlib import Path
+
+from langchain_core.tools import BaseTool
+from langchain_openai import ChatOpenAI
+from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.prebuilt import ToolNode
+
+from langgraph_skills.agent.nodes import agent_node, should_continue
+from langgraph_skills.agent.state import AgentState, Context
+from langgraph_skills.agent.tools import create_meta_tools
+from langgraph_skills.agent.utils import SkillRegistry, get_llm
+from langgraph_skills.constants import Nodes
+
+
+def build_graph(
+    registry: SkillRegistry,
+    llm: ChatOpenAI,
+    meta_tools: Sequence[BaseTool],
+) -> CompiledStateGraph:
+    """Builds and compiles the StateGraph with context_schema=Context."""
+    # Collect all tools across all skills for the master ToolNode executor
+    all_skill_tools: list[BaseTool] = []
+    for s in registry.skills.values():
+        all_skill_tools.extend(s.tools)
+
+    all_tools = list(meta_tools) + all_skill_tools
+    tool_node = ToolNode(all_tools)
+
+    workflow = StateGraph(AgentState, context_schema=Context)
+    workflow.add_node(Nodes.AGENT.value, agent_node)
+    workflow.add_node(Nodes.TOOLS.value, tool_node)
+
+    workflow.add_edge(START, Nodes.AGENT.value)
+    workflow.add_conditional_edges(
+        Nodes.AGENT.value,
+        should_continue,
+        {Nodes.TOOLS.value: Nodes.TOOLS.value, END: END},
+    )
+    workflow.add_edge(Nodes.TOOLS.value, Nodes.AGENT.value)
+
+    return workflow.compile()
+
+
+def create_agent_app(
+    skills_dir: Path,
+    llm: ChatOpenAI = None,
+) -> tuple[CompiledStateGraph, Context]:
+    """Factory creating a ready-to-invoke compiled graph and its context."""
+    registry = SkillRegistry(skills_dir)
+    meta_tools = create_meta_tools(registry)
+    active_llm = llm or get_llm()
+    context = Context(llm=active_llm, registry=registry, meta_tools=meta_tools)
+    graph = build_graph(registry, active_llm, meta_tools)
+    return graph, context
