@@ -136,11 +136,6 @@ The repository ships with 5 production-grade reference skills in [`skills/`](./s
 
 ```text
 langgraph-skills/
-├── .agents/                    # Deep-dive architecture research & design docs
-│   ├── 01-skills-architecture-research.md
-│   ├── 02-langgraph-skills-design.md
-│   ├── 03-implementation-roadmap.md
-│   └── README.md
 ├── skills/                     # Modular file-based skill packages
 │   ├── data-converter/         # CSV/JSON/YAML converter skill
 │   │   ├── SKILL.md
