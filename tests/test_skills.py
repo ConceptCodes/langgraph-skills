@@ -179,3 +179,52 @@ def test_datetime_utility_tools_execution():
     offset_res = offset_tool.invoke({"base_date": "2026-01-01", "days": 5})
     assert offset_res["status"] == "success"
     assert offset_res["result_date"] == "2026-01-06"
+
+
+def test_math_solver_rejects_unsafe_expressions():
+    skills_dir = Path(__file__).parent.parent / "skills"
+    registry = SkillRegistry(skills_dir)
+    calc_tool = {t.name: t for t in registry.skills["math-solver"].tools}["calculate_expression"]
+
+    # Attempt attribute/subclass navigation injection
+    res1 = calc_tool.invoke({"expression": "().__class__.__bases__[0].__subclasses__()"})
+    assert res1["status"] == "error"
+
+    # Attempt arbitrary function call
+    res2 = calc_tool.invoke({"expression": "open('README.md').read()"})
+    assert res2["status"] == "error"
+
+    # Attempt import
+    res3 = calc_tool.invoke({"expression": "__import__('os').system('ls')"})
+    assert res3["status"] == "error"
+
+
+def test_skill_registry_handles_corrupted_skills(tmp_path):
+    # Missing SKILL.md
+    (tmp_path / "empty-skill").mkdir()
+
+    # Broken frontmatter (no delimiter)
+    broken_folder = tmp_path / "broken-skill"
+    broken_folder.mkdir()
+    (broken_folder / "SKILL.md").write_text("Not yaml frontmatter", encoding="utf-8")
+
+    # Invalid YAML
+    invalid_yaml_folder = tmp_path / "invalid-yaml-skill"
+    invalid_yaml_folder.mkdir()
+    (invalid_yaml_folder / "SKILL.md").write_text(
+        "---\n: invalid : : yaml\n---\nbody", encoding="utf-8"
+    )
+
+    # Syntax error in tools.py
+    broken_tools_folder = tmp_path / "broken-tools-skill"
+    broken_tools_folder.mkdir()
+    (broken_tools_folder / "SKILL.md").write_text(
+        "---\nname: broken-tools\ndescription: Test\n---\nbody", encoding="utf-8"
+    )
+    (broken_tools_folder / "tools.py").write_text("def syntax_error(:", encoding="utf-8")
+
+    # Registry loading should not crash
+    registry = SkillRegistry(tmp_path)
+    # broken-tools is loaded with 0 tools instead of crashing
+    assert "broken-tools" in registry.skills
+    assert registry.skills["broken-tools"].tools == []
