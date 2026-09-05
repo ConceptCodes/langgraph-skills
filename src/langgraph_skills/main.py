@@ -8,6 +8,7 @@ from langgraph_skills.agent.main import create_agent_app
 from langgraph_skills.agent.utils import SkillRegistry
 from langgraph_skills.colors import Colors as c
 from langgraph_skills.config import get_config
+from langgraph_skills.constants import RetentionPolicy
 
 
 def print_catalog(registry: SkillRegistry) -> None:
@@ -69,6 +70,10 @@ def run_interactive(app, context) -> None:
     banner_border = c.color("-" * 55, c.MAGENTA)
     print(f"\n{banner_border}")
     print(c.color(" 🚀 LangGraph Skills Agent Ready", c.BRIGHT_GREEN, c.BOLD))
+    print(
+        f" Context Policy: {c.color(context.retention_policy.value, c.BRIGHT_CYAN, c.BOLD)} "
+        f"(max active: {c.color(str(context.max_active_skills), c.BRIGHT_YELLOW)})"
+    )
     print(c.color(" Type your prompt to chat, or 'exit' / 'quit' to stop.", c.DIM))
     print(f"{banner_border}\n")
 
@@ -110,7 +115,7 @@ def run_interactive(app, context) -> None:
                 active_str = ", ".join(c.color(s, c.BRIGHT_MAGENTA, c.BOLD) for s in active_skills)
                 print(f"\n{c.color('⚡ Active Skills in Context:', c.MAGENTA)} [{active_str}]\n")
             else:
-                print()
+                print(f"\n{c.color('🧹 Operational Context Clean (0 active skills)', c.DIM)}\n")
 
         except (KeyboardInterrupt, EOFError):
             print(c.color("\nExiting session. 👋", c.BRIGHT_CYAN))
@@ -134,6 +139,19 @@ def main() -> None:
         default="skills",
         help="Directory containing skill packages (default: 'skills')",
     )
+    parser.add_argument(
+        "--retention-policy",
+        type=str,
+        choices=["auto_evict", "ephemeral", "manual"],
+        default=None,
+        help="Context retention policy: 'auto_evict' (default), 'ephemeral', or 'manual'",
+    )
+    parser.add_argument(
+        "--max-active-skills",
+        type=int,
+        default=None,
+        help="Maximum concurrently active skills in state (default: 1)",
+    )
 
     args = parser.parse_args()
     skills_path = Path(args.skills_dir).resolve()
@@ -145,7 +163,13 @@ def main() -> None:
         return
 
     print_catalog(registry)
-    app, context = create_agent_app(skills_path)
+
+    policy = RetentionPolicy(args.retention_policy) if args.retention_policy else None
+    app, context = create_agent_app(
+        skills_dir=skills_path,
+        retention_policy=policy,
+        max_active_skills=args.max_active_skills,
+    )
     run_interactive(app, context)
 
 

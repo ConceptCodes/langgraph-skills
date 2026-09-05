@@ -9,6 +9,7 @@ from langgraph.graph.message import add_messages
 from typing_extensions import TypedDict
 
 from langgraph_skills.agent.utils.skills import SkillRegistry
+from langgraph_skills.constants import RetentionPolicy
 
 
 class AgentState(TypedDict):
@@ -26,3 +27,5 @@ class Context:
     llm: ChatOpenAI
     registry: SkillRegistry
     meta_tools: Sequence[BaseTool]
+    retention_policy: RetentionPolicy = RetentionPolicy.AUTO_EVICT
+    max_active_skills: int = 1

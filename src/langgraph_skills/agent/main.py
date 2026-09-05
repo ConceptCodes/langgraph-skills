@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Optional
 
 from langchain_core.tools import BaseTool
 from langchain_openai import ChatOpenAI
@@ -11,7 +12,8 @@ from langgraph_skills.agent.nodes import agent_node, should_continue
 from langgraph_skills.agent.state import AgentState, Context
 from langgraph_skills.agent.tools import create_meta_tools
 from langgraph_skills.agent.utils import SkillRegistry, get_llm
-from langgraph_skills.constants import Nodes
+from langgraph_skills.config import get_config
+from langgraph_skills.constants import Nodes, RetentionPolicy
 
 
 def build_graph(
@@ -45,12 +47,25 @@ def build_graph(
 
 def create_agent_app(
     skills_dir: Path,
-    llm: ChatOpenAI = None,
+    llm: Optional[ChatOpenAI] = None,
+    retention_policy: Optional[RetentionPolicy] = None,
+    max_active_skills: Optional[int] = None,
 ) -> tuple[CompiledStateGraph, Context]:
     """Factory creating a ready-to-invoke compiled graph and its context."""
+    config = get_config()
+    policy = retention_policy or config.skill_retention_policy
+    max_skills = max_active_skills or config.max_active_skills
+
     registry = SkillRegistry(skills_dir)
     meta_tools = create_meta_tools(registry)
     active_llm = llm or get_llm()
-    context = Context(llm=active_llm, registry=registry, meta_tools=meta_tools)
+
+    context = Context(
+        llm=active_llm,
+        registry=registry,
+        meta_tools=meta_tools,
+        retention_policy=policy,
+        max_active_skills=max_skills,
+    )
     graph = build_graph(registry, active_llm, meta_tools)
     return graph, context

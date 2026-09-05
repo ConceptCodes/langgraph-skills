@@ -65,6 +65,40 @@ Monolithic agents typically bind dozens of tools and hundreds of lines of instru
 
 ---
 
+## 🧹 Context Engineering: Skill Retention Policies
+
+To prevent multi-turn chats from accumulating stale skills and polluting operational context, the runtime supports **3 configurable retention policies**:
+
+| Policy | Config Setting | Behavior | Best Used When |
+|---|---|---|---|
+| **Auto-Evict** *(Default)* | `auto_evict` | Activating a new skill automatically evicts older skills, respecting `max_active_skills` (default: `1`). | Smooth domain switching with zero context bloat across questions. |
+| **Ephemeral** | `ephemeral` | Skills are bound during tool execution and **automatically cleared to `[]`** when the final answer is generated. | Maximum token efficiency and clean-slate context on every question. |
+| **Manual** | `manual` | Skills remain active across turns until explicitly dismissed via `deactivate_skill(name)`. | Complex multi-turn workflows requiring simultaneous multi-skill context. |
+
+### Configuring Retention
+
+- **Via `.env`**:
+  ```env
+  SKILL_RETENTION_POLICY=auto_evict  # or "ephemeral" or "manual"
+  MAX_ACTIVE_SKILLS=1
+  ```
+- **Via CLI flag**:
+  ```bash
+  python -m langgraph_skills --retention-policy ephemeral
+  ```
+- **Via Python API**:
+  ```python
+  from langgraph_skills.constants import RetentionPolicy
+
+  app, context = create_agent_app(
+      skills_dir=Path("skills"),
+      retention_policy=RetentionPolicy.EPHEMERAL,
+      max_active_skills=1,
+  )
+  ```
+
+---
+
 ## 🏗️ Architecture & Graph Design
 
 Built using LangGraph's modern `Runtime[Context]` and `context_schema`:

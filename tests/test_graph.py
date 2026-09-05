@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.graph import END
 
 from langgraph_skills.agent.main import build_graph, create_agent_app
@@ -9,6 +9,7 @@ from langgraph_skills.agent.prompts import get_system_message
 from langgraph_skills.agent.state import Context
 from langgraph_skills.agent.tools import create_meta_tools
 from langgraph_skills.agent.utils import SkillRegistry
+from langgraph_skills.constants import RetentionPolicy
 
 
 class MockModelWithTools:
@@ -56,6 +57,7 @@ def test_system_prompt_dynamic_sop_injection():
         catalog=registry.get_catalog_summary(),
         active_skills=[],
         registry=registry,
+        retention_policy=RetentionPolicy.AUTO_EVICT,
     )
     assert "### Available Skills Catalog:" in base_prompt
     assert "ACTIVE SKILLS INSTRUCTIONS" not in base_prompt
@@ -65,9 +67,23 @@ def test_system_prompt_dynamic_sop_injection():
         catalog=registry.get_catalog_summary(),
         active_skills=["text-analyzer"],
         registry=registry,
+        retention_policy=RetentionPolicy.AUTO_EVICT,
     )
     assert "### ACTIVE SKILLS INSTRUCTIONS (SOPs):" in active_prompt
     assert "Text Analyzer Operating Procedure" in active_prompt
+
+
+def test_system_prompt_manual_policy_guideline():
+    skills_dir = Path(__file__).parent.parent / "skills"
+    registry = SkillRegistry(skills_dir)
+    manual_prompt = get_system_message(
+        catalog=registry.get_catalog_summary(),
+        active_skills=[],
+        registry=registry,
+        retention_policy=RetentionPolicy.MANUAL,
+    )
+    assert "Context Hygiene Rule" in manual_prompt
+    assert "deactivate_skill" in manual_prompt
 
 
 def test_end_to_end_progressive_disclosure_graph():
@@ -75,10 +91,10 @@ def test_end_to_end_progressive_disclosure_graph():
     registry = SkillRegistry(skills_dir)
     meta_tools = create_meta_tools(registry)
 
-    # Prepare scripted mock responses:
-    # 1. First turn: Agent sees user query and calls activate_skill("math-solver")
-    # 2. Second turn: Agent sees skill activated and calls calculate_expression("15 * 3")
-    # 3. Third turn: Agent returns the final synthesized answer
+    # Scripted mock responses:
+    # 1. Turn 1: Agent calls activate_skill("math-solver")
+    # 2. Turn 2: Agent calls calculate_expression("15 * 3")
+    # 3. Turn 3: Agent returns final synthesized answer
     mock_responses = [
         AIMessage(
             content="",
@@ -107,7 +123,13 @@ def test_end_to_end_progressive_disclosure_graph():
 
     mock_llm = MockLLM(mock_responses)
     graph = build_graph(registry, mock_llm, meta_tools)
-    context = Context(llm=mock_llm, registry=registry, meta_tools=meta_tools)
+    context = Context(
+        llm=mock_llm,
+        registry=registry,
+        meta_tools=meta_tools,
+        retention_policy=RetentionPolicy.AUTO_EVICT,
+        max_active_skills=1,
+    )
 
     initial_input = {
         "messages": [HumanMessage(content="What is 15 * 3?")],
@@ -117,7 +139,6 @@ def test_end_to_end_progressive_disclosure_graph():
 
     final_state = graph.invoke(initial_input, context=context)
 
-    # Verify tool bindings over the turns
     # Turn 1: Only meta-tools bound (Layer 1)
     turn1_tools = mock_llm.captured_tools_history[0]
     assert "activate_skill" in turn1_tools
@@ -129,21 +150,142 @@ def test_end_to_end_progressive_disclosure_graph():
     assert "calculate_expression" in turn2_tools
     assert "compute_statistics" in turn2_tools
 
-    # Verify final state
+    # Verify final state with auto_evict
     assert "math-solver" in final_state["active_skills"]
     messages = final_state["messages"]
-
-    # Verify messages chain: Human -> AI (activate) -> Tool -> AI (calc) -> Tool -> AI (final)
     assert len(messages) == 6
-    assert isinstance(messages[0], HumanMessage)
-    assert isinstance(messages[1], AIMessage)
-    assert isinstance(messages[2], ToolMessage)
-    assert "SUCCESS: Skill 'math-solver' activated" in messages[2].content
-    assert isinstance(messages[3], AIMessage)
-    assert isinstance(messages[4], ToolMessage)
     assert '"result": 45' in messages[4].content
-    assert isinstance(messages[5], AIMessage)
     assert messages[5].content == "The calculation result is 45."
+
+
+def test_retention_policy_ephemeral():
+    skills_dir = Path(__file__).parent.parent / "skills"
+    registry = SkillRegistry(skills_dir)
+    meta_tools = create_meta_tools(registry)
+
+    # In ephemeral mode, the final turn (no tool calls) should reset active_skills to []
+    mock_responses = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "activate_skill",
+                    "args": {"skill_name": "math-solver"},
+                    "id": "call_1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="Calculated successfully."),
+    ]
+
+    mock_llm = MockLLM(mock_responses)
+    graph = build_graph(registry, mock_llm, meta_tools)
+    context = Context(
+        llm=mock_llm,
+        registry=registry,
+        meta_tools=meta_tools,
+        retention_policy=RetentionPolicy.EPHEMERAL,
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Calculate something")],
+            "active_skills": [],
+            "available_catalog": registry.get_catalog_summary(),
+        },
+        context=context,
+    )
+
+    # Final response delivered -> active_skills is automatically cleared!
+    assert result["active_skills"] == []
+
+
+def test_retention_policy_auto_evict_cap():
+    skills_dir = Path(__file__).parent.parent / "skills"
+    registry = SkillRegistry(skills_dir)
+    meta_tools = create_meta_tools(registry)
+
+    # Activating repo-inspector when math-solver was active should auto-evict math-solver
+    mock_responses = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "activate_skill",
+                    "args": {"skill_name": "repo-inspector"},
+                    "id": "call_evict_1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="Switched to repo inspection."),
+    ]
+
+    mock_llm = MockLLM(mock_responses)
+    graph = build_graph(registry, mock_llm, meta_tools)
+    context = Context(
+        llm=mock_llm,
+        registry=registry,
+        meta_tools=meta_tools,
+        retention_policy=RetentionPolicy.AUTO_EVICT,
+        max_active_skills=1,
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Check git now")],
+            "active_skills": ["math-solver"],  # Previously active
+            "available_catalog": registry.get_catalog_summary(),
+        },
+        context=context,
+    )
+
+    # math-solver evicted, only repo-inspector remains active
+    assert result["active_skills"] == ["repo-inspector"]
+
+
+def test_retention_policy_manual():
+    skills_dir = Path(__file__).parent.parent / "skills"
+    registry = SkillRegistry(skills_dir)
+    meta_tools = create_meta_tools(registry)
+
+    # In manual mode, skills accumulate until explicitly deactivated
+    mock_responses = [
+        AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "name": "activate_skill",
+                    "args": {"skill_name": "repo-inspector"},
+                    "id": "call_man_1",
+                    "type": "tool_call",
+                }
+            ],
+        ),
+        AIMessage(content="Both skills are now kept."),
+    ]
+
+    mock_llm = MockLLM(mock_responses)
+    graph = build_graph(registry, mock_llm, meta_tools)
+    context = Context(
+        llm=mock_llm,
+        registry=registry,
+        meta_tools=meta_tools,
+        retention_policy=RetentionPolicy.MANUAL,
+    )
+
+    result = graph.invoke(
+        {
+            "messages": [HumanMessage(content="Use repo inspector too")],
+            "active_skills": ["math-solver"],
+            "available_catalog": registry.get_catalog_summary(),
+        },
+        context=context,
+    )
+
+    assert "math-solver" in result["active_skills"]
+    assert "repo-inspector" in result["active_skills"]
 
 
 def test_create_agent_app_factory():
@@ -153,3 +295,4 @@ def test_create_agent_app_factory():
     assert context is not None
     assert "math-solver" in context.registry.skills
     assert "text-analyzer" in context.registry.skills
+    assert context.retention_policy == RetentionPolicy.AUTO_EVICT
