@@ -9,7 +9,7 @@ class Config(BaseSettings):
     # OpenRouter credentials and model settings
     openrouter_api_key: str = ""
     openrouter_api_base: str = "https://openrouter.ai/api/v1"
-    openrouter_model: str = "openai/gpt-4o-mini"
+    openrouter_model: str = "openai/gpt-5.6-luna"
 
 
 @lru_cache
