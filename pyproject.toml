@@ -1,7 +1,10 @@
 [project]
 name = "langgraph-skills"
 version = "0.1.0"
-description = "Add your description here"
+description = "An example of how to use skills within a LangGraph Agent"
+authors = [
+    { name = "David Ojo", email = "conceptcodes@gmail.com" }
+]
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
