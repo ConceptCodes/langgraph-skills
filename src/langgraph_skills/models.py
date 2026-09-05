@@ -1,6 +1,7 @@
-from typing import Any, Optional
+from typing import Optional
 
-from pydantic import BaseModel, Field
+from langchain_core.tools import BaseTool
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SkillMetadata(BaseModel):
@@ -12,6 +13,8 @@ class SkillMetadata(BaseModel):
 
 
 class Skill(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     metadata: SkillMetadata
     instructions: str
-    tools: list[Any] = Field(default_factory=list)
+    tools: list[BaseTool] = Field(default_factory=list)

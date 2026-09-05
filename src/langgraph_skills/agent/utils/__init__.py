@@ -1,4 +1,4 @@
-from .llm import get_llm, llm_model
+from .llm import get_llm
 from .skills import SkillRegistry
 
-__all__ = ["SkillRegistry", "get_llm", "llm_model"]
+__all__ = ["SkillRegistry", "get_llm"]

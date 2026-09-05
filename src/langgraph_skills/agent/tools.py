@@ -1,7 +1,14 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from langchain_core.tools import BaseTool, tool
 
+if TYPE_CHECKING:
+    from langgraph_skills.agent.utils.skills import SkillRegistry
 
-def create_meta_tools(registry) -> list[BaseTool]:
+
+def create_meta_tools(registry: SkillRegistry) -> list[BaseTool]:
     """Factory creating meta-tools that manipulate skill state."""
 
     @tool

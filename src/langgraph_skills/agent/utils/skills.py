@@ -1,9 +1,12 @@
 import importlib.util
+import logging
 from pathlib import Path
 
 import yaml
 
 from langgraph_skills.models import Skill, SkillMetadata
+
+logger = logging.getLogger(__name__)
 
 
 class SkillRegistry:
@@ -28,29 +31,56 @@ class SkillRegistry:
             self._load_skill(skill_folder, skill_md)
 
     def _load_skill(self, folder: Path, skill_md: Path) -> None:
-        content = skill_md.read_text(encoding="utf-8")
+        try:
+            content = skill_md.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning("Skipping skill '%s': Failed to read SKILL.md (%s)", folder.name, e)
+            return
+
         if not content.startswith("---"):
+            logger.warning(
+                "Skipping skill '%s': Missing opening YAML frontmatter delimiter '---'",
+                folder.name,
+            )
             return
 
         # Strip opening delimiter and split on closing delimiter
         parts = content[3:].split("---", 1)
         if len(parts) < 2:
+            logger.warning(
+                "Skipping skill '%s': Missing closing YAML frontmatter delimiter '---'",
+                folder.name,
+            )
             return
 
         frontmatter_yaml = parts[0].strip()
         instructions = parts[1].strip()
-        metadata_dict = yaml.safe_load(frontmatter_yaml) or {}
-        metadata = SkillMetadata(**metadata_dict)
+
+        try:
+            metadata_dict = yaml.safe_load(frontmatter_yaml) or {}
+            metadata = SkillMetadata(**metadata_dict)
+        except Exception as e:
+            logger.warning("Skipping skill '%s': Invalid frontmatter metadata (%s)", folder.name, e)
+            return
 
         # Import tools if tools.py exists
         tools = []
         tools_py = folder / "tools.py"
         if tools_py.exists():
-            spec = importlib.util.spec_from_file_location(f"skills.{folder.name}.tools", tools_py)
-            if spec and spec.loader:
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                tools = getattr(module, "SKILL_TOOLS", [])
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"skills.{folder.name}.tools", tools_py
+                )
+                if spec and spec.loader:
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    tools = getattr(module, "SKILL_TOOLS", [])
+            except Exception as e:
+                logger.warning(
+                    "Failed to load tools for skill '%s': %s",
+                    folder.name,
+                    e,
+                )
 
         self.skills[metadata.name] = Skill(
             metadata=metadata,

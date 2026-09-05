@@ -13,6 +13,7 @@ def get_repo_status() -> dict:
             capture_output=True,
             text=True,
             check=True,
+            timeout=10,
         )
         current_branch = branch_proc.stdout.strip()
 
@@ -21,6 +22,7 @@ def get_repo_status() -> dict:
             capture_output=True,
             text=True,
             check=True,
+            timeout=10,
         )
         status_lines = [line.strip() for line in status_proc.stdout.splitlines() if line.strip()]
 
@@ -44,7 +46,7 @@ def get_recent_commits(limit: int = 5) -> dict:
     """
     try:
         cmd = ["git", "log", f"-n{max(1, limit)}", "--pretty=format:%h|%an|%s|%cd", "--date=short"]
-        proc = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        proc = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=10)
         commits = []
         for line in proc.stdout.splitlines():
             if not line.strip():

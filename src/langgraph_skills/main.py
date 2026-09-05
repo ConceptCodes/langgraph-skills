@@ -1,6 +1,7 @@
 import argparse
 import sys
 from pathlib import Path
+from typing import Optional
 
 from langchain_core.messages import AIMessage, HumanMessage
 
@@ -124,7 +125,7 @@ def run_interactive(app, context) -> None:
             print(c.color(f"\n❌ Error during execution: {e}", c.RED, c.BOLD))
 
 
-def main() -> None:
+def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(
         description="LangGraph Skills: An agentic application showcasing dynamic skill utilization."
     )
@@ -153,7 +154,7 @@ def main() -> None:
         help="Maximum concurrently active skills in state (default: 1)",
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     skills_path = Path(args.skills_dir).resolve()
 
     registry = SkillRegistry(skills_path)
